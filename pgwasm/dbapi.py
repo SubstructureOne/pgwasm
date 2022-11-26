@@ -492,7 +492,7 @@ class Cursor:
         else:
             self._context.row_count = sum(rowcounts)
 
-    def callproc(self, procname, parameters=None):
+    async def callproc(self, procname, parameters=None):
         args = [] if parameters is None else parameters
         operation = f"CALL {procname}(" + ", ".join(["%s" for _ in args]) + ")"
 
@@ -500,7 +500,7 @@ class Cursor:
 
             statement, vals = convert_paramstyle("format", operation, args)
 
-            self._context = self._c.execute_unnamed(statement, vals=vals)
+            self._context = await self._c.execute_unnamed(statement, vals=vals)
 
             if self._context.rows is None:
                 self._row_iter = None
