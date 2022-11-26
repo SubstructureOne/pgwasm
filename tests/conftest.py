@@ -51,7 +51,7 @@ async def cursor(request, con):
 @pytest_asyncio.fixture
 async def pg_version(cursor):
     await cursor.execute("select current_setting('server_version')")
-    retval = await cursor.fetchall()
+    retval = cursor.fetchall()
     version = retval[0][0]
     idx = version.index(".")
     return int(version[:idx])

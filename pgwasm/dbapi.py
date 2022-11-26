@@ -737,7 +737,7 @@ class Connection(CoreConnection):
         try:
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
-            if xid in self.tpc_recover():
+            if xid in await self.tpc_recover():
                 await self.execute_unnamed("COMMIT PREPARED '%s';" % (xid[1],))
             else:
                 # a single-phase commit
@@ -771,14 +771,14 @@ class Connection(CoreConnection):
         try:
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
-            if xid in self.tpc_recover():
+            if xid in await self.tpc_recover():
                 # a two-phase rollback
                 await self.execute_unnamed("ROLLBACK PREPARED '%s';" % (xid[1],))
             else:
                 # a single-phase rollback
                 await self.rollback()
         finally:
-            self.autocommit = await previous_autocommit_mode
+            self.autocommit = previous_autocommit_mode
         self._xid = None
 
     async def tpc_recover(self):
