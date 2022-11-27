@@ -3,6 +3,7 @@ import os
 import time
 
 import pytest
+import pytest_asyncio
 
 from pgwasm.dbapi import (
     BINARY,

@@ -11,7 +11,7 @@ def db_kwargs():
     db_connect = {
         "user": "postgres",
         "password": "pw",
-        "uri": f"ws://{environ['PGHOST']}:{environ['PGPORT']}"
+        "uri": f"ws://{environ.get('PGHOST', 'localhost')}:{environ.get('PGPORT', 6432)}"
     }
     return db_connect
 
