@@ -1,11 +1,40 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import date as Date, datetime as Datetime, time as Time
 from itertools import count, islice
 from time import localtime
 from warnings import warn
 
-from asgiref.sync import async_to_sync
+import asgiref.sync
+
+
+# from asgiref.sync import async_to_sync
+# global loop
+
+def async_to_sync(coroutine, loop=None):
+    if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+
+    def synchronous(*args, **kwargs):
+        # local = threading.local()
+        # if not hasattr(local, 'loop'):
+        #     local.loop = asyncio.new_event_loop()
+        # elif local.loop.is_closed():
+        #     local.loop = asyncio.new_event_loop()
+        # loop = local.loop
+        # try:
+        #     loop = asyncio.get_running_loop()
+        #     print(f"Found an existing event loop ({id(loop)})")
+        # except RuntimeError:
+        #     loop = asyncio.new_event_loop()
+        #     print(f"Creating a new event loop ({id(loop)})")
+        return loop.run_until_complete(coroutine(*args, **kwargs))
+    return synchronous
 
 from pgwasm.converters import (
     BIGINT,
@@ -373,12 +402,14 @@ def convert_paramstyle(style, query, args):
 class Cursor:
     def __init__(self, connection: Connection):
         self._c = connection
+        self._loop = connection._loop
         self.arraysize = 1
-
         self._context = None
         self._row_iter = None
-
         self._input_oids = ()
+        self.execute = async_to_sync(self.aexecute, self._loop)
+        self.executemany = async_to_sync(self.aexecutemany, self._loop)
+        self.callproc = async_to_sync(self.acallproc, self._loop)
 
     @property
     def connection(self):
@@ -468,7 +499,6 @@ class Cursor:
 
         self.input_types = []
 
-    execute = async_to_sync(aexecute)
 
     async def aexecutemany(self, operation, param_sets):
         """Prepare a database operation, and then execute it against all
@@ -488,7 +518,7 @@ class Cursor:
         input_oids = self._input_oids
         for parameters in param_sets:
             self._input_oids = input_oids
-            await self.execute(operation, parameters)
+            await self.aexecute(operation, parameters)
             rowcounts.append(self._context.row_count)
 
         if len(rowcounts) == 0:
@@ -497,8 +527,6 @@ class Cursor:
             self._context.row_count = -1
         else:
             self._context.row_count = sum(rowcounts)
-
-    executemany = async_to_sync(aexecutemany)
 
     async def acallproc(self, procname, parameters=None):
         args = [] if parameters is None else parameters
@@ -522,8 +550,6 @@ class Cursor:
                 raise InterfaceError("connection is closed")
             else:
                 raise e
-
-    callproc = async_to_sync(acallproc)
 
     def fetchone(self):
         """Fetch the next row of a query result set.
@@ -635,6 +661,20 @@ class Cursor:
 
 
 class Connection(CoreConnection):
+    def __init__(self, *args, **kwargs):
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = asyncio.new_event_loop()
+        self.commit = async_to_sync(self.acommit, self._loop)
+        self.rollback = async_to_sync(self.arollback, self._loop)
+        self.close = async_to_sync(lambda: CoreConnection.close(self), self._loop)
+        self.tpc_begin = async_to_sync(self.atpc_begin, self._loop)
+        self.tpc_prepare = async_to_sync(self.atpc_prepare, self._loop)
+        self.tpc_commit = async_to_sync(self.atpc_commit, self._loop)
+        self.tpc_rollback = async_to_sync(self.atpc_rollback, self._loop)
+        self.tpc_recover = async_to_sync(self.atpc_recover, self._loop)
+        super(Connection, self).__init__(*args, **kwargs)
 
     # DBAPI Extension: supply exceptions as attributes on the connection
     Warning = property(lambda self: self._getError(Warning))
@@ -672,7 +712,6 @@ class Connection(CoreConnection):
         """
         await self.execute_unnamed("commit")
 
-    commit = async_to_sync(acommit)
 
     async def arollback(self):
         """Rolls back the current database transaction.
@@ -684,7 +723,6 @@ class Connection(CoreConnection):
             return
         await self.execute_unnamed("rollback")
 
-    rollback = async_to_sync(arollback)
 
     def xid(self, format_id, global_transaction_id, branch_qualifier):
         """Create a Transaction IDs (only global_transaction_id is used in pg)
@@ -711,7 +749,6 @@ class Connection(CoreConnection):
         if self.autocommit:
             await self.execute_unnamed("begin transaction")
 
-    tpc_begin = async_to_sync(atpc_begin)
 
     async def atpc_prepare(self):
         """Performs the first phase of a transaction started with .tpc_begin().
@@ -725,8 +762,6 @@ class Connection(CoreConnection):
         <http://www.python.org/dev/peps/pep-0249/>`_.
         """
         await self.execute_unnamed("PREPARE TRANSACTION '%s';" % (self._xid[1],))
-
-    tpc_prepare = async_to_sync(atpc_prepare)
 
     async def atpc_commit(self, xid=None):
         """When called with no arguments, .tpc_commit() commits a TPC
@@ -755,16 +790,15 @@ class Connection(CoreConnection):
         try:
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
-            if xid in await self.tpc_recover():
+            if xid in await self.atpc_recover():
                 await self.execute_unnamed("COMMIT PREPARED '%s';" % (xid[1],))
             else:
                 # a single-phase commit
-                await self.commit()
+                await self.acommit()
         finally:
             self.autocommit = previous_autocommit_mode
         self._xid = None
 
-    tpc_commit = async_to_sync(atpc_commit)
 
     async def atpc_rollback(self, xid=None):
         """When called with no arguments, .tpc_rollback() rolls back a TPC
@@ -791,17 +825,16 @@ class Connection(CoreConnection):
         try:
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
-            if xid in await self.tpc_recover():
+            if xid in await self.atpc_recover():
                 # a two-phase rollback
                 await self.execute_unnamed("ROLLBACK PREPARED '%s';" % (xid[1],))
             else:
                 # a single-phase rollback
-                await self.rollback()
+                await self.arollback()
         finally:
             self.autocommit = previous_autocommit_mode
         self._xid = None
 
-    tpc_rollback = async_to_sync(atpc_rollback)
 
     async def atpc_recover(self):
         """Returns a list of pending transaction IDs suitable for use with
@@ -814,12 +847,12 @@ class Connection(CoreConnection):
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
             curs = self.cursor()
-            await curs.execute("select gid FROM pg_prepared_xacts")
+            await curs.aexecute("select gid FROM pg_prepared_xacts")
             return [self.xid(0, row[0], "") for row in curs.fetchall()]
         finally:
             self.autocommit = previous_autocommit_mode
 
-    tpc_recover = async_to_sync(atpc_recover)
+
 
 
 class Warning(Exception):

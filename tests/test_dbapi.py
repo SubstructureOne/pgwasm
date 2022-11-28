@@ -3,7 +3,6 @@ import os
 import time
 
 import pytest
-import pytest_asyncio
 
 from pgwasm.dbapi import (
     BINARY,
@@ -30,32 +29,32 @@ def has_tzset():
 
 # DBAPI compatible interface tests
 @pytest.fixture
-async def db_table(con, has_tzset):
+def db_table(con, has_tzset):
     c = con.cursor()
-    await c.execute(
+    c.execute(
         "CREATE TEMPORARY TABLE t1 "
         "(f1 int primary key, f2 int not null, f3 varchar(50) null) "
         "ON COMMIT DROP"
     )
-    await c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (1, 1, None))
-    await c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (2, 10, None))
-    await c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (3, 100, None))
-    await c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (4, 1000, None))
-    await c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (5, 10000, None))
+    c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (1, 1, None))
+    c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (2, 10, None))
+    c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (3, 100, None))
+    c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (4, 1000, None))
+    c.execute("INSERT INTO t1 (f1, f2, f3) VALUES (%s, %s, %s)", (5, 10000, None))
     return con
 
 
-async def test_parallel_queries(db_table):
+def test_parallel_queries(db_table):
     c1 = db_table.cursor()
     c2 = db_table.cursor()
 
-    await c1.execute("SELECT f1, f2, f3 FROM t1")
+    c1.execute("SELECT f1, f2, f3 FROM t1")
     while 1:
         row = c1.fetchone()
         if row is None:
             break
         f1, f2, f3 = row
-        await c2.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > %s", (f1,))
+        c2.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > %s", (f1,))
         while 1:
             row = c2.fetchone()
             if row is None:
@@ -63,10 +62,10 @@ async def test_parallel_queries(db_table):
             f1, f2, f3 = row
 
 
-async def test_qmark(mocker, db_table):
+def test_qmark(mocker, db_table):
     mocker.patch("pgwasm.dbapi.paramstyle", "qmark")
     c1 = db_table.cursor()
-    await c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > ?", (3,))
+    c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > ?", (3,))
     while 1:
         row = c1.fetchone()
         if row is None:
@@ -74,10 +73,10 @@ async def test_qmark(mocker, db_table):
         f1, f2, f3 = row
 
 
-async def test_numeric(mocker, db_table):
+def test_numeric(mocker, db_table):
     mocker.patch("pgwasm.dbapi.paramstyle", "numeric")
     c1 = db_table.cursor()
-    await c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > :1", (3,))
+    c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > :1", (3,))
     while 1:
         row = c1.fetchone()
         if row is None:
@@ -85,10 +84,10 @@ async def test_numeric(mocker, db_table):
         f1, f2, f3 = row
 
 
-async def test_named(mocker, db_table):
+def test_named(mocker, db_table):
     mocker.patch("pgwasm.dbapi.paramstyle", "named")
     c1 = db_table.cursor()
-    await c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > :f1", {"f1": 3})
+    c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > :f1", {"f1": 3})
     while 1:
         row = c1.fetchone()
         if row is None:
@@ -96,10 +95,10 @@ async def test_named(mocker, db_table):
         f1, f2, f3 = row
 
 
-async def test_format(mocker, db_table):
+def test_format(mocker, db_table):
     mocker.patch("pgwasm.dbapi.paramstyle", "format")
     c1 = db_table.cursor()
-    await c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > %s", (3,))
+    c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > %s", (3,))
     while 1:
         row = c1.fetchone()
         if row is None:
@@ -107,10 +106,10 @@ async def test_format(mocker, db_table):
         f1, f2, f3 = row
 
 
-async def test_pyformat(mocker, db_table):
+def test_pyformat(mocker, db_table):
     mocker.patch("pgwasm.dbapi.paramstyle", "pyformat")
     c1 = db_table.cursor()
-    await c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > %(f1)s", {"f1": 3})
+    c1.execute("SELECT f1, f2, f3 FROM t1 WHERE f1 > %(f1)s", {"f1": 3})
     while 1:
         row = c1.fetchone()
         if row is None:
@@ -118,10 +117,10 @@ async def test_pyformat(mocker, db_table):
         f1, f2, f3 = row
 
 
-async def test_arraysize(db_table):
+def test_arraysize(db_table):
     c1 = db_table.cursor()
     c1.arraysize = 3
-    await c1.execute("SELECT * FROM t1")
+    c1.execute("SELECT * FROM t1")
     retval = c1.fetchmany()
     assert len(retval) == c1.arraysize
 
@@ -165,32 +164,32 @@ def test_binary():
     assert isinstance(v, BINARY)
 
 
-async def test_row_count(db_table):
+def test_row_count(db_table):
     c1 = db_table.cursor()
-    await c1.execute("SELECT * FROM t1")
+    c1.execute("SELECT * FROM t1")
 
     assert 5 == c1.rowcount
 
-    await c1.execute("UPDATE t1 SET f3 = %s WHERE f2 > 101", ("Hello!",))
+    c1.execute("UPDATE t1 SET f3 = %s WHERE f2 > 101", ("Hello!",))
     assert 2 == c1.rowcount
 
-    await c1.execute("DELETE FROM t1")
+    c1.execute("DELETE FROM t1")
     assert 5 == c1.rowcount
 
 
-async def test_fetch_many(db_table):
+def test_fetch_many(db_table):
     cursor = db_table.cursor()
     cursor.arraysize = 2
-    await cursor.execute("SELECT * FROM t1")
+    cursor.execute("SELECT * FROM t1")
     assert 2 == len(cursor.fetchmany())
     assert 2 == len(cursor.fetchmany())
     assert 1 == len(cursor.fetchmany())
     assert 0 == len(cursor.fetchmany())
 
 
-async def test_iterator(db_table):
+def test_iterator(db_table):
     cursor = db_table.cursor()
-    await cursor.execute("SELECT * FROM t1 ORDER BY f1")
+    cursor.execute("SELECT * FROM t1 ORDER BY f1")
     f1 = 0
     for row in cursor.fetchall():
         next_f1 = row[0]
@@ -200,16 +199,16 @@ async def test_iterator(db_table):
 
 # Vacuum can't be run inside a transaction, so we need to turn
 # autocommit on.
-async def test_vacuum(con):
+def test_vacuum(con):
     con.autocommit = True
     cursor = con.cursor()
-    await cursor.execute("vacuum")
+    cursor.execute("vacuum")
 
 
-async def test_prepared_statement(con):
+def test_prepared_statement(con):
     cursor = con.cursor()
-    await cursor.execute("PREPARE gen_series AS SELECT generate_series(1, 10);")
-    await cursor.execute("EXECUTE gen_series")
+    cursor.execute("PREPARE gen_series AS SELECT generate_series(1, 10);")
+    cursor.execute("EXECUTE gen_series")
 
 
 def test_cursor_type(cursor):

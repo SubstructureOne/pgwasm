@@ -144,14 +144,15 @@ IDLE = b"I"
 IN_TRANSACTION = b"T"
 IN_FAILED_TRANSACTION = b"E"
 
+
 class WebSocketWrapper:
     """Wrap a WebSocket in a way that roughly resembles a combination of
     a :class:`socket.socket` and the file-like object returned by
     :meth:`socket.socket.makefile`."""
     @classmethod
-    def create_connection(cls, uri: str):
+    async def create_connection(cls, uri: str):
         conn = WebSocketWrapper(uri)
-        conn.connect()
+        await conn.connect()
         return conn
 
     def __init__(self, uri: str):

@@ -1,3 +1,4 @@
+import asyncio
 from os import environ
 
 import pytest
@@ -16,29 +17,27 @@ def db_kwargs():
     return db_connect
 
 
-@pytest_asyncio.fixture
-async def con(request, db_kwargs, event_loop):
-    conn = await pgwasm.dbapi.connect(**db_kwargs)
+@pytest.fixture
+def con(request, db_kwargs):
+    conn = pgwasm.dbapi.connect(**db_kwargs)
 
     def fin():
-        async def afin():
-            try:
-                await conn.rollback()
-            except pgwasm.dbapi.InterfaceError:
-                pass
+        try:
+            conn.rollback()
+        except pgwasm.dbapi.InterfaceError:
+            pass
 
-            try:
-                await conn.close()
-            except pgwasm.dbapi.InterfaceError:
-                pass
-        event_loop.run_until_complete(afin())
+        try:
+            conn.close()
+        except pgwasm.dbapi.InterfaceError:
+            pass
 
     request.addfinalizer(fin)
     return conn
 
 
-@pytest_asyncio.fixture
-async def cursor(request, con):
+@pytest.fixture
+def cursor(request, con):
     cursor = con.cursor()
 
     def fin():
@@ -48,9 +47,9 @@ async def cursor(request, con):
     return cursor
 
 
-@pytest_asyncio.fixture
-async def pg_version(cursor):
-    await cursor.execute("select current_setting('server_version')")
+@pytest.fixture
+def pg_version(cursor):
+    cursor.execute("select current_setting('server_version')")
     retval = cursor.fetchall()
     version = retval[0][0]
     idx = version.index(".")
