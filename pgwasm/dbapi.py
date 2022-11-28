@@ -5,6 +5,8 @@ from itertools import count, islice
 from time import localtime
 from warnings import warn
 
+from asgiref.sync import async_to_sync
+
 from pgwasm.converters import (
     BIGINT,
     BOOLEAN,
@@ -189,7 +191,7 @@ def Binary(value):
     return value
 
 
-async def connect(
+async def aconnect(
         user,
         uri: str,
         database=None,
@@ -207,6 +209,8 @@ async def connect(
     )
     await conn.connect()
     return conn
+
+connect = async_to_sync(aconnect)
 
 
 apilevel = "2.0"
@@ -410,7 +414,7 @@ class Cursor:
     # or mapping and will be bound to variables in the operation.
     # <p>
     # Stability: Part of the DBAPI 2.0 specification.
-    async def execute(self, operation, args=(), stream=None):
+    async def aexecute(self, operation, args=(), stream=None):
         """Executes a database operation.  Parameters may be provided as a
         sequence, or as a mapping, depending upon the value of
         :data:`pgwasm.paramstyle`.
@@ -464,7 +468,9 @@ class Cursor:
 
         self.input_types = []
 
-    async def executemany(self, operation, param_sets):
+    execute = async_to_sync(aexecute)
+
+    async def aexecutemany(self, operation, param_sets):
         """Prepare a database operation, and then execute it against all
         parameter sequences or mappings provided.
 
@@ -492,7 +498,9 @@ class Cursor:
         else:
             self._context.row_count = sum(rowcounts)
 
-    async def callproc(self, procname, parameters=None):
+    executemany = async_to_sync(aexecutemany)
+
+    async def acallproc(self, procname, parameters=None):
         args = [] if parameters is None else parameters
         operation = f"CALL {procname}(" + ", ".join(["%s" for _ in args]) + ")"
 
@@ -514,6 +522,8 @@ class Cursor:
                 raise InterfaceError("connection is closed")
             else:
                 raise e
+
+    callproc = async_to_sync(acallproc)
 
     def fetchone(self):
         """Fetch the next row of a query result set.
@@ -654,7 +664,7 @@ class Connection(CoreConnection):
         """
         return Cursor(self)
 
-    async def commit(self):
+    async def acommit(self):
         """Commits the current database transaction.
 
         This function is part of the `DBAPI 2.0 specification
@@ -662,7 +672,9 @@ class Connection(CoreConnection):
         """
         await self.execute_unnamed("commit")
 
-    async def rollback(self):
+    commit = async_to_sync(acommit)
+
+    async def arollback(self):
         """Rolls back the current database transaction.
 
         This function is part of the `DBAPI 2.0 specification
@@ -672,6 +684,8 @@ class Connection(CoreConnection):
             return
         await self.execute_unnamed("rollback")
 
+    rollback = async_to_sync(arollback)
+
     def xid(self, format_id, global_transaction_id, branch_qualifier):
         """Create a Transaction IDs (only global_transaction_id is used in pg)
         format_id and branch_qualifier are not used in postgres
@@ -680,7 +694,7 @@ class Connection(CoreConnection):
         (format_id, global_transaction_id, branch_qualifier)"""
         return (format_id, global_transaction_id, branch_qualifier)
 
-    async def tpc_begin(self, xid):
+    async def atpc_begin(self, xid):
         """Begins a TPC transaction with the given transaction ID xid.
 
         This method should be called outside of a transaction (i.e. nothing may
@@ -697,7 +711,9 @@ class Connection(CoreConnection):
         if self.autocommit:
             await self.execute_unnamed("begin transaction")
 
-    async def tpc_prepare(self):
+    tpc_begin = async_to_sync(atpc_begin)
+
+    async def atpc_prepare(self):
         """Performs the first phase of a transaction started with .tpc_begin().
         A ProgrammingError is be raised if this method is called outside of a
         TPC transaction.
@@ -710,7 +726,9 @@ class Connection(CoreConnection):
         """
         await self.execute_unnamed("PREPARE TRANSACTION '%s';" % (self._xid[1],))
 
-    async def tpc_commit(self, xid=None):
+    tpc_prepare = async_to_sync(atpc_prepare)
+
+    async def atpc_commit(self, xid=None):
         """When called with no arguments, .tpc_commit() commits a TPC
         transaction previously prepared with .tpc_prepare().
 
@@ -746,7 +764,9 @@ class Connection(CoreConnection):
             self.autocommit = previous_autocommit_mode
         self._xid = None
 
-    async def tpc_rollback(self, xid=None):
+    tpc_commit = async_to_sync(atpc_commit)
+
+    async def atpc_rollback(self, xid=None):
         """When called with no arguments, .tpc_rollback() rolls back a TPC
         transaction. It may be called before or after .tpc_prepare().
 
@@ -781,7 +801,9 @@ class Connection(CoreConnection):
             self.autocommit = previous_autocommit_mode
         self._xid = None
 
-    async def tpc_recover(self):
+    tpc_rollback = async_to_sync(atpc_rollback)
+
+    async def atpc_recover(self):
         """Returns a list of pending transaction IDs suitable for use with
         .tpc_commit(xid) or .tpc_rollback(xid).
 
@@ -796,6 +818,8 @@ class Connection(CoreConnection):
             return [self.xid(0, row[0], "") for row in curs.fetchall()]
         finally:
             self.autocommit = previous_autocommit_mode
+
+    tpc_recover = async_to_sync(atpc_recover)
 
 
 class Warning(Exception):
