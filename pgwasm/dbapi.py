@@ -577,7 +577,7 @@ class Cursor:
 
     def __next__(self):
         try:
-            return next(self._row_iter)
+            return tuple(next(self._row_iter))
         except AttributeError:
             if self._context is None:
                 raise ProgrammingError("A query hasn't been issued.")

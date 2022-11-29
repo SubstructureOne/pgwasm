@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pgwasm"
-version = "0.1.1"
+version = "0.2.0"
 description = "PostgreSQL interface for WebAssembly over WebSockets"
 authors = ["dek <dek@substructure.one>"]
 readme = "README.md"
