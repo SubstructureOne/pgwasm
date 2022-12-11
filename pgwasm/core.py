@@ -172,13 +172,13 @@ class WebSocketWrapper:
 
     def read(self, numbytes: int):
         while len(self._buf) < numbytes:
-            self._buf.extend(self._socket.recv())
+            self._buf.extend(self._socket.recv_sync())
         result = self._buf[:numbytes]
         self._buf = self._buf[numbytes:]
         return bytes(result)
 
     def write(self, data: bytes):
-        self._socket.send(data)
+        self._socket.send_sync(data)
 
     def close(self):
         # await self._socket.close()
