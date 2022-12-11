@@ -21,18 +21,7 @@ def async_to_sync(coroutine, loop=None):
             loop = asyncio.new_event_loop()
 
     def synchronous(*args, **kwargs):
-        # local = threading.local()
-        # if not hasattr(local, 'loop'):
-        #     local.loop = asyncio.new_event_loop()
-        # elif local.loop.is_closed():
-        #     local.loop = asyncio.new_event_loop()
-        # loop = local.loop
-        # try:
-        #     loop = asyncio.get_running_loop()
-        #     print(f"Found an existing event loop ({id(loop)})")
-        # except RuntimeError:
-        #     loop = asyncio.new_event_loop()
-        #     print(f"Creating a new event loop ({id(loop)})")
+        # task = loop.run
         return loop.run_until_complete(coroutine(*args, **kwargs))
     return synchronous
 
