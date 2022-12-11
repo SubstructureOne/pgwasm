@@ -7,23 +7,24 @@ from itertools import count, islice
 from time import localtime
 from warnings import warn
 
-import asgiref.sync
+# import asgiref.sync
 
 
 # from asgiref.sync import async_to_sync
 # global loop
 
 def async_to_sync(coroutine, loop=None):
-    if loop is None:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-
-    def synchronous(*args, **kwargs):
-        # task = loop.run
-        return loop.run_until_complete(coroutine(*args, **kwargs))
-    return synchronous
+    # if loop is None:
+    #     try:
+    #         loop = asyncio.get_running_loop()
+    #     except RuntimeError:
+    #         loop = asyncio.new_event_loop()
+    #
+    # def synchronous(*args, **kwargs):
+    #     # task = loop.run
+    #     return loop.run_until_complete(coroutine(*args, **kwargs))
+    # return synchronous
+    return coroutine
 
 from pgwasm.converters import (
     BIGINT,
@@ -209,7 +210,7 @@ def Binary(value):
     return value
 
 
-async def aconnect(
+def aconnect(
         user,
         uri: str,
         database=None,
@@ -225,7 +226,7 @@ async def aconnect(
         application_name=application_name,
         replication=replication,
     )
-    await conn.connect()
+    conn.connect()
     return conn
 
 connect = async_to_sync(aconnect)
@@ -434,7 +435,7 @@ class Cursor:
     # or mapping and will be bound to variables in the operation.
     # <p>
     # Stability: Part of the DBAPI 2.0 specification.
-    async def aexecute(self, operation, args=(), stream=None):
+    def aexecute(self, operation, args=(), stream=None):
         """Executes a database operation.  Parameters may be provided as a
         sequence, or as a mapping, depending upon the value of
         :data:`pgwasm.paramstyle`.
@@ -463,13 +464,13 @@ class Cursor:
         """
         try:
             if not self._c._in_transaction and not self._c.autocommit:
-                await self._c.execute_simple("begin transaction")
+                self._c.execute_simple("begin transaction")
 
             if len(args) == 0 and stream is None:
-                self._context = await self._c.execute_simple(operation)
+                self._context = self._c.execute_simple(operation)
             else:
                 statement, vals = convert_paramstyle(paramstyle, operation, args)
-                self._context = await self._c.execute_unnamed(
+                self._context = self._c.execute_unnamed(
                     statement, vals=vals, oids=self._input_oids, stream=stream
                 )
 
@@ -489,7 +490,7 @@ class Cursor:
         self.input_types = []
 
 
-    async def aexecutemany(self, operation, param_sets):
+    def aexecutemany(self, operation, param_sets):
         """Prepare a database operation, and then execute it against all
         parameter sequences or mappings provided.
 
@@ -507,7 +508,7 @@ class Cursor:
         input_oids = self._input_oids
         for parameters in param_sets:
             self._input_oids = input_oids
-            await self.aexecute(operation, parameters)
+            self.aexecute(operation, parameters)
             rowcounts.append(self._context.row_count)
 
         if len(rowcounts) == 0:
@@ -517,7 +518,7 @@ class Cursor:
         else:
             self._context.row_count = sum(rowcounts)
 
-    async def acallproc(self, procname, parameters=None):
+    def acallproc(self, procname, parameters=None):
         args = [] if parameters is None else parameters
         operation = f"CALL {procname}(" + ", ".join(["%s" for _ in args]) + ")"
 
@@ -525,7 +526,7 @@ class Cursor:
 
             statement, vals = convert_paramstyle("format", operation, args)
 
-            self._context = await self._c.execute_unnamed(statement, vals=vals)
+            self._context = self._c.execute_unnamed(statement, vals=vals)
 
             if self._context.rows is None:
                 self._row_iter = None
@@ -693,16 +694,16 @@ class Connection(CoreConnection):
         """
         return Cursor(self)
 
-    async def acommit(self):
+    def acommit(self):
         """Commits the current database transaction.
 
         This function is part of the `DBAPI 2.0 specification
         <http://www.python.org/dev/peps/pep-0249/>`_.
         """
-        await self.execute_unnamed("commit")
+        self.execute_unnamed("commit")
 
 
-    async def arollback(self):
+    def arollback(self):
         """Rolls back the current database transaction.
 
         This function is part of the `DBAPI 2.0 specification
@@ -710,7 +711,7 @@ class Connection(CoreConnection):
         """
         if not self._in_transaction:
             return
-        await self.execute_unnamed("rollback")
+        self.execute_unnamed("rollback")
 
 
     def xid(self, format_id, global_transaction_id, branch_qualifier):
@@ -721,7 +722,7 @@ class Connection(CoreConnection):
         (format_id, global_transaction_id, branch_qualifier)"""
         return (format_id, global_transaction_id, branch_qualifier)
 
-    async def atpc_begin(self, xid):
+    def atpc_begin(self, xid):
         """Begins a TPC transaction with the given transaction ID xid.
 
         This method should be called outside of a transaction (i.e. nothing may
@@ -736,10 +737,10 @@ class Connection(CoreConnection):
         """
         self._xid = xid
         if self.autocommit:
-            await self.execute_unnamed("begin transaction")
+            self.execute_unnamed("begin transaction")
 
 
-    async def atpc_prepare(self):
+    def atpc_prepare(self):
         """Performs the first phase of a transaction started with .tpc_begin().
         A ProgrammingError is be raised if this method is called outside of a
         TPC transaction.
@@ -750,9 +751,9 @@ class Connection(CoreConnection):
         This function is part of the `DBAPI 2.0 specification
         <http://www.python.org/dev/peps/pep-0249/>`_.
         """
-        await self.execute_unnamed("PREPARE TRANSACTION '%s';" % (self._xid[1],))
+        self.execute_unnamed("PREPARE TRANSACTION '%s';" % (self._xid[1],))
 
-    async def atpc_commit(self, xid=None):
+    def atpc_commit(self, xid=None):
         """When called with no arguments, .tpc_commit() commits a TPC
         transaction previously prepared with .tpc_prepare().
 
@@ -779,17 +780,17 @@ class Connection(CoreConnection):
         try:
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
-            if xid in await self.atpc_recover():
-                await self.execute_unnamed("COMMIT PREPARED '%s';" % (xid[1],))
+            if xid in self.atpc_recover():
+                self.execute_unnamed("COMMIT PREPARED '%s';" % (xid[1],))
             else:
                 # a single-phase commit
-                await self.acommit()
+                self.acommit()
         finally:
             self.autocommit = previous_autocommit_mode
         self._xid = None
 
 
-    async def atpc_rollback(self, xid=None):
+    def atpc_rollback(self, xid=None):
         """When called with no arguments, .tpc_rollback() rolls back a TPC
         transaction. It may be called before or after .tpc_prepare().
 
@@ -814,18 +815,18 @@ class Connection(CoreConnection):
         try:
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
-            if xid in await self.atpc_recover():
+            if xid in self.atpc_recover():
                 # a two-phase rollback
-                await self.execute_unnamed("ROLLBACK PREPARED '%s';" % (xid[1],))
+                self.execute_unnamed("ROLLBACK PREPARED '%s';" % (xid[1],))
             else:
                 # a single-phase rollback
-                await self.arollback()
+                self.arollback()
         finally:
             self.autocommit = previous_autocommit_mode
         self._xid = None
 
 
-    async def atpc_recover(self):
+    def atpc_recover(self):
         """Returns a list of pending transaction IDs suitable for use with
         .tpc_commit(xid) or .tpc_rollback(xid).
 
@@ -836,7 +837,7 @@ class Connection(CoreConnection):
             previous_autocommit_mode = self.autocommit
             self.autocommit = True
             curs = self.cursor()
-            await curs.aexecute("select gid FROM pg_prepared_xacts")
+            curs.aexecute("select gid FROM pg_prepared_xacts")
             return [self.xid(0, row[0], "") for row in curs.fetchall()]
         finally:
             self.autocommit = previous_autocommit_mode
